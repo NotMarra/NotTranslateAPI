@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, Form
+from fastapi import FastAPI, UploadFile, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import uuid
 from fastapi.responses import FileResponse
@@ -7,6 +7,7 @@ from db import save_feedback, save_file, get_file_count
 import os
 from datetime import datetime
 import asyncio
+from functions import parse_ass_file
 
 not_translated_folder = "not_translated_files"
 if not os.path.exists(not_translated_folder):
@@ -53,13 +54,25 @@ async def get_file(file_id: str):
 async def get_file_content(file_id: str):
     file_path = os.path.join(translated_folder, f"{file_id}.ass")
     original_file_path = os.path.join(not_translated_folder, f"{file_id}.ass")
-    if os.path.exists(file_path) & os.path.exists(original_file_path):
+    
+    if os.path.exists(file_path) and os.path.exists(original_file_path):
         with open(file_path, "r", encoding="utf-8") as f:
-            content = f.read()
+            translated_content = f.read()
         with open(original_file_path, "r", encoding="utf-8") as f:
             original_content = f.read()
-        return {"content": content,
-                "content_original": original_content}
+            
+        original_subtitles = parse_ass_file(original_content)
+        translated_subtitles = parse_ass_file(translated_content)
+        
+        subtitle_pairs = []
+        for orig, trans in zip(original_subtitles, translated_subtitles):
+            subtitle_pairs.append({
+                "original": orig,
+                "translated": trans,
+                "id": len(subtitle_pairs)
+            })
+            
+        return {"subtitles": subtitle_pairs}
     else:
         return {"error": "File not found"}
 
@@ -72,10 +85,21 @@ async def feedback(
     original_text: str = Form(...),
     translated_text: str = Form(...),
     corrected_text: str = Form(None),
-    rating: int = Form(...)
+    rating: int = Form(...),
+    file_id: str = Form(None) 
 ):
-    await save_feedback(original_text, translated_text, corrected_text, rating)
-    return {"status": "Feedback saved"}
+    try:
+        await save_feedback(
+            original_text=original_text,
+            translated_text=translated_text,
+            corrected_text=corrected_text,
+            rating=rating,
+            file_id=file_id or str(uuid.uuid4()),  
+            created_at=datetime.utcnow(),
+        )
+        return {"status": "Feedback saved successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/stats")
 async def stats():

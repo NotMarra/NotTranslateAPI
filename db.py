@@ -9,7 +9,7 @@ client = AsyncIOMotorClient(mongo_uri, serverSelectionTimeoutMS=5000)
 db = client["translation"]
 
 # Asynchronní funkce pro uložení zpětné vazby
-async def save_feedback(original_text, translated_text, corrected_text, rating, file_id, created_at, translated, deleted):
+async def save_feedback(original_text, translated_text, corrected_text, rating, file_id, created_at):
     feedback_collection = db["feedback"]
 
     feedback = {
@@ -19,8 +19,6 @@ async def save_feedback(original_text, translated_text, corrected_text, rating, 
         "rating": rating,
         "file_id": file_id,
         "created_at": created_at,
-        "translated": translated,
-        "deleted": deleted
     }
 
     await feedback_collection.insert_one(feedback)
