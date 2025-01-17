@@ -2,20 +2,22 @@ from motor.motor_asyncio import AsyncIOMotorClient
 import os
 from dotenv import load_dotenv
 
-load_dotenv()  # Nejdřív načti environment variabely
+load_dotenv()
 
 mongo_uri = os.getenv("MONGO_URL")
 client = AsyncIOMotorClient(mongo_uri, serverSelectionTimeoutMS=5000)
 db = client["translation"]
 
 # Asynchronní funkce pro uložení zpětné vazby
-async def save_feedback(original_text, translated_text, corrected_text, rating, file_id, created_at):
+async def save_feedback(original_text, translated_text, corrected_text, original_language, target_language, rating, file_id, created_at):
     feedback_collection = db["feedback"]
 
     feedback = {
         "original_text": original_text,
         "translated_text": translated_text,
         "corrected_text": corrected_text,
+        "original_language": original_language,
+        "target_language": target_language,
         "rating": rating,
         "file_id": file_id,
         "created_at": created_at,

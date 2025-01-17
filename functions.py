@@ -7,7 +7,6 @@ def parse_ass_file(content: str) -> List[Dict[str, str]]:
     lines = content.split('\n')
     for line in lines:
         if line.startswith('Dialogue:'):
-            # Split at first 9 commas to separate format from content
             parts = line.split(',', 9)
             if len(parts) > 9:
                 subtitle = {
