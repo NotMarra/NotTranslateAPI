@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, Form, HTTPException, Security, Query
+from fastapi import FastAPI, HTTPException, Security
 from fastapi.middleware.cors import CORSMiddleware
 import uuid
 from fastapi.responses import FileResponse
@@ -8,7 +8,7 @@ from translate import (
     get_translation_status, 
     get_available_languages
 )
-from db import save_feedback, save_file, get_file_count
+from db import save_feedback, save_file, get_file_count, get_feedback_count
 import os
 from datetime import datetime
 import asyncio
@@ -18,6 +18,7 @@ from api import is_valid_api_key
 from typing import List
 from cleanup import schedule_cleanup
 import time
+from schemas import FeedbackRequest, TranslateRequest
 
 not_translated_folder = "not_translated_files"
 if not os.path.exists(not_translated_folder):
@@ -26,15 +27,12 @@ translated_folder = "translated_files"
 if not os.path.exists(translated_folder):
     os.makedirs(translated_folder)
 
-# Use asyncio.Queue for the translation queue
 translation_queue = asyncio.Queue()
 background_task = None
-
 
 async def process_queue():
     while True:
         try:
-            # Get item from queue with timeout to prevent blocking
             try:
                 file_id, file_path, target_lang = await asyncio.wait_for(
                     translation_queue.get(), timeout=60
@@ -44,7 +42,6 @@ async def process_queue():
                 continue
 
             try:
-                # Update status before starting translation
                 from translate import translation_status
                 translation_status[file_id] = {
                     "status": "pending",
@@ -55,12 +52,10 @@ async def process_queue():
                     "start_time": time.time()
                 }
 
-                # Start translation
                 await translate_file(file_id, file_path, target_lang)
                 
             except Exception as translate_error:
                 print(f"Error translating file {file_id}: {translate_error}")
-                # Update status on error
                 translation_status[file_id] = {
                     "status": "error",
                     "error_message": str(translate_error)
@@ -73,7 +68,6 @@ async def process_queue():
             break
         except Exception as e:
             print(f"Unexpected error in process_queue: {str(e)}")
-            # Brief pause to prevent tight error loop
             await asyncio.sleep(1)
 
 
@@ -87,7 +81,7 @@ async def validate_api_key(api_key: str = Security(api_key_header)):
 app = FastAPI(
     title="NotTranslate API",
     description="API for translating subtitle files",
-    version="0.0.1"
+    version="0.0.2"
 )
 
 app.add_middleware(
@@ -126,13 +120,20 @@ async def available_languages():
     """Get list of available target languages for translation"""
     return get_available_languages()
 
-@app.post("/translate")
+@app.post(
+        "/translate", 
+          summary="Translate a file",
+          description="Uploads a file and translates it to the target language.",
+          response_model=dict,
+          )
 async def translate(
-    file: UploadFile, 
-    target_lang: str = Query("en-cs", description="Target language code"),
+    request: TranslateRequest,
     api_key: str = Security(api_key_header)
 ):
     await validate_api_key(api_key)
+
+    file = request.file
+    target_lang = request.target_lang
     
     if target_lang not in get_available_languages():
         raise HTTPException(
@@ -157,10 +158,7 @@ async def translate(
     creation_time = datetime.utcnow()
     await save_file(file_id, creation_time, False, False)
     
-    # Put the item in the queue with all required parameters
     await translation_queue.put((file_id, file_path, target_lang))
-    
-    
     return {
         "file_id": file_id,
         "status": "queued",
@@ -223,16 +221,12 @@ async def get_status(file_id: str):
 
 @app.post("/feedback")
 async def feedback(
-    original_text: str = Form(...),
-    translated_text: str = Form(...),
-    corrected_text: str = Form(None),
-    original_language: str = Form(...),
-    target_language: str = Form(...),
-    rating: int = Form(...),
-    file_id: str = Form(None)
-):
+    feedback: FeedbackRequest,
+    api_key: str = Security(api_key_header)):
     """Submit feedback for a translation"""
-    if rating not in range(1, 6):
+    await validate_api_key(api_key)
+
+    if feedback.rating not in range(1, 6):
         raise HTTPException(
             status_code=400,
             detail="Rating must be between 1 and 5"
@@ -240,13 +234,13 @@ async def feedback(
         
     try:
         await save_feedback(
-            original_text=original_text,
-            translated_text=translated_text,
-            corrected_text=corrected_text,
-            original_language=original_language,
-            target_language=target_language,
-            rating=rating,
-            file_id=file_id or str(uuid.uuid4()),
+            original_text=feedback.original_text,
+            translated_text=feedback.translated_text,
+            corrected_text=feedback.corrected_text,
+            original_language=feedback.original_language,
+            target_language=feedback.target_language,
+            rating=feedback.rating,
+            file_id=feedback.file_id or str(uuid.uuid4()),
             created_at=datetime.utcnow(),
         )
         return {"status": "Feedback saved successfully"}
@@ -258,8 +252,10 @@ async def stats():
     """Get global translation statistics"""
     try:
         files_count = await get_file_count()
+        feedback_count = await get_feedback_count()
         return {
             "files_count": files_count,
+            "feedback_count": feedback_count,
             "available_languages": get_available_languages()
         }
     except Exception as e:
