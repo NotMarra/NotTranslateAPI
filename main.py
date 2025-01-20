@@ -165,7 +165,7 @@ async def translate(
         "target_language": target_lang
     }
 
-@app.get("/get-file/{file_id}")
+@app.get("/file/{file_id}")
 async def get_file(file_id: str):
     """Download translated file by ID"""
     file_path = os.path.join(translated_folder, f"{file_id}.ass")
@@ -178,7 +178,7 @@ async def get_file(file_id: str):
     else:
         raise HTTPException(status_code=404, detail="File not found")
 
-@app.get("/get-file-content/{file_id}")
+@app.get("/content/{file_id}")
 async def get_file_content(file_id: str):
     """Get original and translated content as paired subtitles"""
     file_path = os.path.join(translated_folder, f"{file_id}.ass")
@@ -211,7 +211,7 @@ async def get_file_content(file_id: str):
             detail=f"Error processing file content: {str(e)}"
         )
 
-@app.get("/translation-status/{file_id}")
+@app.get("/status/{file_id}")
 async def get_status(file_id: str):
     """Get current translation status, including queue position and ETA"""
     status = get_translation_status(file_id)
